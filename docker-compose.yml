@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    container_name: explorer-db
+    environment:
+      POSTGRES_USER: explorer
+      POSTGRES_PASSWORD: explorer
+      POSTGRES_DB: explorer
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U explorer"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - explorer-net
+
+  # Backend API + Indexer
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: explorer-backend
+    environment:
+      EXPLORER_DATABASE_URL: postgresql+asyncpg://explorer:explorer@postgres:5432/explorer
+      EXPLORER_NODE_URL: http://host.docker.internal:8000
+      EXPLORER_API_HOST: 0.0.0.0
+      EXPLORER_API_PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - explorer-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  indexer:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: explorer-indexer
+    environment:
+      EXPLORER_DATABASE_URL: postgresql+asyncpg://explorer:explorer@postgres:5432/explorer
+      EXPLORER_NODE_URL: http://host.docker.internal:8000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - explorer-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    command: ["python", "-m", "indexer"]
+
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: explorer-frontend
+    environment:
+      API_URL: http://backend:3001
+    ports:
+      - "4000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - explorer-net
+
+volumes:
+  postgres_data:
+
+networks:
+  explorer-net:
+    driver: bridge

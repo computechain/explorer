@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.env
+.venv
+venv/
+env/
+
+# Node / frontend
+node_modules/
+dist/
+build/
+
+# Docker
+*.log
+docker-data/
+postgres_data/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+
+# Local config
+*.local
