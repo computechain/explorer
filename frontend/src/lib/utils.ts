@@ -16,30 +16,76 @@ export function truncateHash(hash: string, chars: number = 10): string {
   return `${hash.slice(0, chars)}...`;
 }
 
-export function formatNumber(num: number | string): string {
-  const n = typeof num === 'string' ? parseFloat(num) : num;
-  if (isNaN(n)) return '0';
-  return n.toLocaleString('en-US');
+function formatBigInt(value: bigint): string {
+  const negative = value < 0n;
+  const absValue = negative ? -value : value;
+  const grouped = absValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  return negative ? `-${grouped}` : grouped;
 }
 
-export function formatCPC(amount: string | number, decimals: number = 18): string {
-  const wei = BigInt(amount.toString());
-  const divisor = BigInt(10 ** decimals);
-  const whole = wei / divisor;
-  const remainder = wei % divisor;
+function parseBigInt(value: unknown): bigint {
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) return 0n;
+    return BigInt(Math.trunc(value));
+  }
+  if (typeof value !== 'string') return 0n;
 
-  if (remainder === BigInt(0)) {
-    return formatNumber(whole.toString());
+  const trimmed = value.trim();
+  if (trimmed === '') return 0n;
+  if (/^-?\d+$/.test(trimmed)) return BigInt(trimmed);
+
+  const expMatch = /^([+-])?(\d+)(?:\.(\d+))?[eE]([+-]?\d+)$/.exec(trimmed);
+  if (expMatch) {
+    const sign = expMatch[1] === '-' ? -1n : 1n;
+    const intPart = expMatch[2];
+    const fracPart = expMatch[3] || '';
+    const exponent = parseInt(expMatch[4], 10);
+    const digits = `${intPart}${fracPart}`.replace(/^0+/, '') || '0';
+    const scale = exponent - fracPart.length;
+
+    if (scale < 0) return 0n;
+    return sign * BigInt(`${digits}${'0'.repeat(scale)}`);
+  }
+
+  return 0n;
+}
+
+export function formatNumber(num: number | string | bigint): string {
+  if (typeof num === 'bigint') return formatBigInt(num);
+  if (typeof num === 'number') {
+    if (!Number.isFinite(num)) return '0';
+    return num.toLocaleString('en-US');
+  }
+
+  const trimmed = num.trim();
+  if (trimmed === '') return '0';
+  if (/^-?\d+$/.test(trimmed)) return formatBigInt(BigInt(trimmed));
+
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed)) return '0';
+  return parsed.toLocaleString('en-US');
+}
+
+export function formatCPC(amount: string | number | bigint, decimals: number = 18): string {
+  const base = 10n ** BigInt(decimals);
+  const value = parseBigInt(amount);
+  const negative = value < 0n;
+  const absValue = negative ? -value : value;
+  const whole = absValue / base;
+  const remainder = absValue % base;
+
+  if (remainder === 0n) {
+    return `${negative ? '-' : ''}${formatNumber(whole)}`;
   }
 
   const remainderStr = remainder.toString().padStart(decimals, '0');
-  const trimmed = remainderStr.replace(/0+$/, '').slice(0, 4);
-
+  const trimmed = remainderStr.replace(/0+$/, '').slice(0, 6);
   if (trimmed === '') {
-    return formatNumber(whole.toString());
+    return `${negative ? '-' : ''}${formatNumber(whole)}`;
   }
 
-  return `${formatNumber(whole.toString())}.${trimmed}`;
+  return `${negative ? '-' : ''}${formatNumber(whole)}.${trimmed}`;
 }
 
 export function formatTimestamp(timestamp: number): string {

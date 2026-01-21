@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional
 from decimal import Decimal
 from datetime import datetime
+import asyncio
 import httpx
 
 from core.database import get_session
@@ -26,6 +27,28 @@ async def fetch_balance_from_node(address: str) -> Optional[dict]:
     except Exception:
         pass
     return None
+
+
+async def fetch_balances_batch(addresses: list[str]) -> dict[str, dict]:
+    """Fetch balances for multiple addresses in parallel."""
+    if not addresses:
+        return {}
+
+    results: dict[str, dict] = {}
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        tasks = [client.get(f"{settings.node_url}/balance/{address}") for address in addresses]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    for address, response in zip(addresses, responses):
+        if isinstance(response, Exception):
+            continue
+        if response.status_code != 200:
+            continue
+        data = response.json()
+        if isinstance(data, dict):
+            results[address] = data
+
+    return results
 
 
 @router.get("")
@@ -61,6 +84,22 @@ async def get_accounts(
     )
     accounts = result.scalars().all()
 
+    # Refresh balances from node for the current page
+    node_data = await fetch_balances_batch([account.address for account in accounts])
+    if node_data:
+        updated = False
+        now = datetime.utcnow()
+        for account in accounts:
+            data = node_data.get(account.address)
+            if not data:
+                continue
+            account.balance = Decimal(str(data.get("balance", 0)))
+            account.nonce = data.get("nonce", account.nonce)
+            account.updated_at = now
+            updated = True
+        if updated:
+            await session.commit()
+
     return {
         "accounts": [_account_to_dict(a) for a in accounts],
         "pagination": {
@@ -85,6 +124,21 @@ async def get_top_accounts(
     )
     accounts = result.scalars().all()
 
+    node_data = await fetch_balances_batch([account.address for account in accounts])
+    if node_data:
+        updated = False
+        now = datetime.utcnow()
+        for account in accounts:
+            data = node_data.get(account.address)
+            if not data:
+                continue
+            account.balance = Decimal(str(data.get("balance", 0)))
+            account.nonce = data.get("nonce", account.nonce)
+            account.updated_at = now
+            updated = True
+        if updated:
+            await session.commit()
+
     return {"accounts": [_account_to_dict(a) for a in accounts]}
 
 
@@ -99,6 +153,21 @@ async def get_validators(
         .order_by(desc(Account.balance))
     )
     validators = result.scalars().all()
+
+    node_data = await fetch_balances_batch([account.address for account in validators])
+    if node_data:
+        updated = False
+        now = datetime.utcnow()
+        for account in validators:
+            data = node_data.get(account.address)
+            if not data:
+                continue
+            account.balance = Decimal(str(data.get("balance", 0)))
+            account.nonce = data.get("nonce", account.nonce)
+            account.updated_at = now
+            updated = True
+        if updated:
+            await session.commit()
 
     return {"validators": [_account_to_dict(a, include_validator_info=True) for a in validators]}
 
