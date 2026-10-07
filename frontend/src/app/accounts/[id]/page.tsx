@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { User, Copy, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { fetchAccount, fetchAccountTransactions } from '@/lib/api';
-import { formatNumber, formatCPC, truncateHash, getTxTypeColor } from '@/lib/utils';
+import { formatNumber, formatCPC, truncateHash, getTxTypeColor, copyText } from '@/lib/utils';
 
 export default function AccountDetailPage() {
   const params = useParams();
@@ -25,8 +25,8 @@ export default function AccountDetailPage() {
     queryFn: () => fetchAccountTransactions(address, txPage, 25, direction || undefined),
   });
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(address);
+  const copyToClipboard = async () => {
+    if (!await copyText(address)) return;
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -74,7 +74,7 @@ export default function AccountDetailPage() {
           </div>
           <div className="flex items-center mt-1">
             <p className="font-mono text-sm text-gray-500 truncate">{address}</p>
-            <button onClick={copyToClipboard} className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0">
+            <button aria-label={copied ? 'Copied address' : 'Copy address'} onClick={copyToClipboard} className="ml-2 text-gray-400 hover:text-gray-600 flex-shrink-0">
               {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
             </button>
           </div>
@@ -107,6 +107,11 @@ export default function AccountDetailPage() {
       </div>
 
       {/* Transactions */}
+      <div className="rounded-xl border border-gray-200 dark:border-slate-700 p-4 text-sm">
+        State at height {account.state_height}: self stake {formatCPC(account.self_stake)} CPC,
+        delegated {formatCPC(account.delegated)} CPC, unbonding {formatCPC(account.unbonding)} CPC.
+        These funds are separate from liquid balance.
+      </div>
       <div className="bg-white dark:bg-slate-800 rounded-xl shadow-sm border border-gray-100 dark:border-slate-700">
         <div className="flex items-center justify-between p-4 border-b border-gray-100 dark:border-slate-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Transactions</h2>
@@ -124,7 +129,7 @@ export default function AccountDetailPage() {
                     : 'bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200'
                 }`}
               >
-                {d === '' ? 'All' : d.charAt(0).toUpperCase() + d.slice(1)}
+                {d === '' ? 'All' : d === 'sent' ? 'Authored' : 'Recipient'}
               </button>
             ))}
           </div>
@@ -156,7 +161,7 @@ export default function AccountDetailPage() {
                       <span className={`px-2 py-0.5 rounded text-xs ${
                         tx.direction === 'sent' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'
                       }`}>
-                        {tx.direction === 'sent' ? 'OUT' : 'IN'}
+                        {tx.direction === 'sent' ? 'AUTHOR' : 'RECIPIENT'}
                       </span>
                     </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mt-1">
@@ -171,7 +176,7 @@ export default function AccountDetailPage() {
                     <div className={`text-sm font-medium ${
                       tx.direction === 'sent' ? 'text-red-600' : 'text-green-600'
                     }`}>
-                      {tx.direction === 'sent' ? '-' : '+'}{formatCPC(tx.amount)} CPC
+                      {formatCPC(tx.amount)} CPC requested
                     </div>
                     <Link
                       href={`/blocks/${tx.block_height}`}

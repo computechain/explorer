@@ -1,0 +1,9 @@
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
+WORKDIR /app
+COPY requirements-comet.txt .
+RUN pip install --no-cache-dir -r requirements-comet.txt
+COPY comet.py .
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+USER 1000:1000
+CMD ["python", "-m", "uvicorn", "comet:application", "--factory", "--host", "127.0.0.1", "--port", "3042", "--workers", "1", "--limit-concurrency", "32", "--timeout-keep-alive", "5"]

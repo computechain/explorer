@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Blocks, ArrowLeft, ArrowRight, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { fetchBlock } from '@/lib/api';
-import { formatNumber, formatTimestamp, truncateAddress, truncateHash, formatCPC, getTxTypeColor } from '@/lib/utils';
+import { formatNumber, formatTimestamp, truncateAddress, truncateHash, formatCPC, getTxTypeColor, copyText } from '@/lib/utils';
 
 export default function BlockDetailPage() {
   const params = useParams();
@@ -18,8 +18,8 @@ export default function BlockDetailPage() {
     queryFn: () => fetchBlock(blockId),
   });
 
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, field: string) => {
+    if (!await copyText(text)) return;
     setCopied(field);
     setTimeout(() => setCopied(null), 2000);
   };
@@ -62,12 +62,12 @@ export default function BlockDetailPage() {
           </h1>
         </div>
         <div className="flex space-x-2">
-          <Link
+          {block.height > 1 && <Link
             href={`/blocks/${block.height - 1}`}
             className="px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700 flex items-center"
           >
             <ArrowLeft className="w-4 h-4 mr-1" /> Prev
-          </Link>
+          </Link>}
           <Link
             href={`/blocks/${block.height + 1}`}
             className="px-3 py-2 rounded-lg border border-gray-300 dark:border-slate-600 hover:bg-gray-100 dark:hover:bg-slate-700 flex items-center"
@@ -93,7 +93,7 @@ export default function BlockDetailPage() {
           <DetailRow
             label="Proposer"
             value={
-              <Link href={`/accounts/${block.proposer}`} className="text-primary-600 hover:text-primary-700 font-mono">
+              <Link href="/validators" className="text-primary-600 hover:text-primary-700 font-mono">
                 {block.proposer}
               </Link>
             }
@@ -103,7 +103,8 @@ export default function BlockDetailPage() {
             label="Gas Used"
             value={`${formatNumber(block.gas_used)} / ${formatNumber(block.gas_limit)} (${((block.gas_used / block.gas_limit) * 100).toFixed(1)}%)`}
           />
-          <DetailRow label="State Root" value={block.state_root || '-'} mono />
+          <DetailRow label="AppHash before H" value={block.app_hash_before || '-'} mono />
+          <DetailRow label="AppHash after H" value={block.app_hash_after || 'Awaiting indexed header H+1'} mono />
           <DetailRow label="Tx Root" value={block.tx_root || '-'} mono />
           {block.prev_hash && (
             <DetailRow
@@ -197,7 +198,7 @@ function DetailRow({
       <div className={`flex-1 text-sm text-gray-900 dark:text-white ${mono ? 'font-mono break-all' : ''}`}>
         {value}
         {copyable && onCopy && (
-          <button onClick={onCopy} className="ml-2 text-gray-400 hover:text-gray-600">
+          <button aria-label={`${copied ? 'Copied' : 'Copy'} ${label}`} onClick={onCopy} className="ml-2 text-gray-400 hover:text-gray-600">
             {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
           </button>
         )}

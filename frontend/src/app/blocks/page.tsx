@@ -82,7 +82,7 @@ export default function BlocksPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Link
-                        href={`/accounts/${block.proposer}`}
+                        href="/validators"
                         className="font-mono text-sm text-gray-600 dark:text-gray-300 hover:text-primary-600"
                       >
                         {truncateAddress(block.proposer)}

@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { ArrowLeftRight, Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { fetchTransaction } from '@/lib/api';
-import { formatNumber, formatCPC, getTxTypeColor } from '@/lib/utils';
+import { formatNumber, formatCPC, getTxTypeColor, copyText } from '@/lib/utils';
 
 export default function TransactionDetailPage() {
   const params = useParams();
@@ -18,8 +18,8 @@ export default function TransactionDetailPage() {
     queryFn: () => fetchTransaction(txHash),
   });
 
-  const copyToClipboard = (text: string, field: string) => {
-    navigator.clipboard.writeText(text);
+  const copyToClipboard = async (text: string, field: string) => {
+    if (!await copyText(text)) return;
     setCopied(field);
     setTimeout(() => setCopied(null), 2000);
   };
@@ -76,8 +76,8 @@ export default function TransactionDetailPage() {
           <DetailRow
             label="Status"
             value={
-              <span className="px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
-                Confirmed
+              <span className={`px-2 py-1 rounded text-xs font-medium ${tx.code === 0 ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {tx.code === 0 ? 'Committed — success' : `Committed — failed (code ${tx.code})`}
               </span>
             }
           />
@@ -121,7 +121,7 @@ export default function TransactionDetailPage() {
 
           {tx.gas_price !== undefined && (
             <>
-              <DetailRow label="Gas Price" value={`${formatNumber(tx.gas_price)} wei`} />
+              <DetailRow label="Gas Price" value={`${formatNumber(tx.gas_price)} CPC base units`} />
               <DetailRow label="Gas Limit" value={formatNumber(tx.gas_limit || 0)} />
               <DetailRow label="Gas Used" value={formatNumber(tx.gas_used || 0)} />
             </>
@@ -174,7 +174,7 @@ function DetailRow({
       <div className={`flex-1 text-sm text-gray-900 dark:text-white ${mono ? 'font-mono break-all' : ''}`}>
         {value}
         {copyable && onCopy && (
-          <button onClick={onCopy} className="ml-2 text-gray-400 hover:text-gray-600 inline-flex items-center">
+          <button aria-label={`${copied ? 'Copied' : 'Copy'} ${label}`} onClick={onCopy} className="ml-2 text-gray-400 hover:text-gray-600 inline-flex items-center">
             {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
           </button>
         )}

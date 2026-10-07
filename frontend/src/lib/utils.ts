@@ -80,7 +80,7 @@ export function formatCPC(amount: string | number | bigint, decimals: number = 1
   }
 
   const remainderStr = remainder.toString().padStart(decimals, '0');
-  const trimmed = remainderStr.replace(/0+$/, '').slice(0, 6);
+  const trimmed = remainderStr.replace(/0+$/, '');
   if (trimmed === '') {
     return `${negative ? '-' : ''}${formatNumber(whole)}`;
   }
@@ -110,8 +110,28 @@ export function getTxTypeColor(txType: string): string {
     UNSTAKE: 'bg-yellow-100 text-yellow-800',
     DELEGATE: 'bg-purple-100 text-purple-800',
     UNDELEGATE: 'bg-orange-100 text-orange-800',
-    COMPUTE: 'bg-pink-100 text-pink-800',
-    UNJAIL: 'bg-red-100 text-red-800',
+    UPDATE_VALIDATOR: 'bg-pink-100 text-pink-800',
   };
   return colors[txType] || 'bg-gray-100 text-gray-800';
+}
+
+export async function copyText(value: string): Promise<boolean> {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(value);
+      return true;
+    }
+    // LAN HTTP has no Clipboard API; retain a user-gesture fallback.
+    const input = document.createElement('textarea');
+    input.value = value;
+    input.style.position = 'fixed';
+    input.style.opacity = '0';
+    document.body.appendChild(input);
+    input.select();
+    const result = document.execCommand('copy');
+    input.remove();
+    return result;
+  } catch {
+    return false;
+  }
 }

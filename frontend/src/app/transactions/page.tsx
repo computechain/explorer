@@ -7,7 +7,7 @@ import { ArrowLeftRight, ChevronLeft, ChevronRight, Filter } from 'lucide-react'
 import { fetchTransactions } from '@/lib/api';
 import { formatNumber, truncateHash, truncateAddress, formatCPC, getTxTypeColor } from '@/lib/utils';
 
-const TX_TYPES = ['TRANSFER', 'STAKE', 'UNSTAKE', 'DELEGATE', 'UNDELEGATE', 'COMPUTE', 'UNJAIL'];
+const TX_TYPES = ['TRANSFER', 'STAKE', 'UNSTAKE', 'DELEGATE', 'UNDELEGATE', 'UPDATE_VALIDATOR'];
 
 export default function TransactionsPage() {
   const [page, setPage] = useState(1);

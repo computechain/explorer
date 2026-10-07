@@ -1,106 +1,80 @@
-# ComputeChain Explorer
+# ComputeChain Explorer — Comet v3
 
-Blockchain explorer for ComputeChain.
+Read-only observer for the current local CometBFT/ABCI ledger. The existing
+Next.js UI now uses a separate canonical Comet adapter and durable SQLite index.
+It is not a wallet, block producer or independent light client.
 
-## Quick Start
+## Run on the stand
 
-```bash
-# Start explorer (PostgreSQL + Backend + Frontend)
-docker-compose up -d
+From the sibling blockchain repository, after starting its v3 stand:
 
-# View logs
-docker-compose logs -f
+~~~bash
+./start_test.sh explorer-up
+./start_test.sh explorer-status
+./start_test.sh explorer-logs
+./start_test.sh explorer-down
+~~~
 
-# Stop
-docker-compose down
-```
+Open [Explorer](http://192.168.0.100:4000/). No login required.
+Normal stand up includes explorer; --no-web skips explorer/website startup.
+Override the UI port with --explorer-port and LAN address with --monitoring-host.
+Stop/restart keeps the SQLite index in <devnet>/explorer/index/. No keys or node
+databases are mounted. Runtime settings/config live outside Git.
 
-**URLs:**
-- Frontend: http://localhost:3000
-- API: http://localhost:3001
-- API Docs: http://localhost:3001/docs
+В LAN: http://192.168.0.100:4000/. Логин не нужен. Команды выше управляют только
+explorer, не перезапускают цепь. Индекс сохраняется после остановки.
 
-## Requirements
+## Working minimum
 
-- Docker & Docker Compose
-- Running ComputeChain node on `localhost:8000`
+- Actual native block ID; transaction ID = SHA256 of raw signed wire bytes.
+- Paginated blocks and transactions; type/account filters and authored/recipient history.
+- Height/block-hash/transaction-hash/account search, including lowercase hex.
+- Liquid balance, nonce, self stake, delegation and queued withdrawals.
+- Validator owner/key binding, native versus scheduled power, commission and tombstone.
+- Explicit successful/failed execution status; exact base-unit token strings.
+- Visible observed-node, index and account-state heights; offline/stale state is labelled.
+- Responsive UI; local assets/fonts, without a runtime Tailwind CDN.
 
-## Configuration
+AppHash in block H is the result before executing H. The after-H hash comes
+from indexed header H+1; it stays unavailable until that header is indexed.
+Account snapshots are latest observed application state, not historical proofs.
+Transaction totals cover indexed history only; the index is rebuilt from genesis
+and may initially lag. The local node is trusted as observer data source.
 
-Environment variables in `docker-compose.yml`:
+## Deployment boundary
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `EXPLORER_NODE_URL` | `http://host.docker.internal:8000` | Blockchain node URL |
-| `EXPLORER_INDEXER_POLL_INTERVAL` | `2` | Sync interval (seconds) |
-| `EXPLORER_RESYNC_INTERVAL` | `300` | Reorg check interval (seconds) |
-| `EXPLORER_RESYNC_DEPTH` | `10` | Blocks to check for reorg |
+Nginx exposes only GET/HEAD UI/API on a selected private LAN IP. Backend and
+Next.js bind loopback at base_port+200 / base_port+201. Comet RPC/ABCI remain
+loopback; arbitrary RPC proxying and transaction broadcasting are not exposed.
+Containers are non-root, read-only except the public index/tmpfs, resource-bounded,
+with digest-pinned base images. No Postgres is needed for this MVP.
 
-## Architecture
+[Public explorer](https://explorer.computechain.space/) uses the existing edge
+Nginx and HTTPS. It displays the same experimental local devnet, not a public
+production chain. Public POST/broadcast and arbitrary native RPC are rejected.
+Only the configured edge peer may forward the HTTPS scheme; untrusted LAN
+clients cannot override it with X-Forwarded-Proto. The current TCP SNI edge loses
+original client IPs: the gateway's API quota is shared by public visitors.
+Core PUBLIC_SITES.md describes the edge routing, renewal and operator commands.
 
-```
-┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  Frontend   │────▶│   Backend   │────▶│  PostgreSQL │
-│  Next.js    │     │   FastAPI   │     │             │
-│  :3000      │     │   :3001     │     │   :5432     │
-└─────────────┘     └──────┬──────┘     └─────────────┘
-                          │
-                          ▼
-                   ┌─────────────┐
-                   │  Blockchain │
-                   │    Node     │
-                   │   :8000     │
-                   └─────────────┘
-```
+The active backend is backend/comet.py (single index writer, one Uvicorn worker).
+Legacy API/Postgres/indexer modules and docker-compose.legacy.yml are historical,
+not compatible with v3; do not use the old bare startup instructions.
+The default Compose file requires runtime variables from the stand controller.
+Finalized conflicts/domain changes fail closed; no automatic reorg/reset occurs.
 
-## Features
+## Development checks
 
-- **Real-time Indexing**: Syncs blocks as they're produced
-- **Reorg Detection**: Verifies last N blocks every 5 minutes
-- **Dashboard**: Stats, TPS, recent activity
-- **Block Explorer**: Browse blocks with transactions
-- **Transaction Explorer**: Filter by type, address
-- **Account Explorer**: Balances, transaction history
-- **Search**: By block height, tx hash, or address
+Python dependencies: backend/requirements-comet.txt; tests also need pytest/httpx.
+Run tests with scratch storage, e.g. from the workspace:
 
-## Development
+~~~bash
+.tools/explorer-venv/bin/python -m pytest explorer/backend/tests -q
+~~~
 
-```bash
-# Run without Docker (for development)
+Frontend: Next.js 16 / React 19 / Tailwind 4; package-lock.json is checked in.
+Use npm ci and npm run build (includes TypeScript checks). Docker builds these
+without installing Node globally. Runtime versions are pinned in the Dockerfiles.
 
-# 1. PostgreSQL
-docker run -d --name explorer-db \
-  -e POSTGRES_USER=explorer \
-  -e POSTGRES_PASSWORD=explorer \
-  -e POSTGRES_DB=explorer \
-  -p 5432:5432 \
-  postgres:16-alpine
-
-# 2. Backend
-cd backend
-pip install -r requirements.txt
-python -m backend.main
-
-# 3. Frontend
-cd frontend
-npm install
-npm run dev
-```
-
-## API Endpoints
-
-### Blocks
-- `GET /api/blocks` - List blocks
-- `GET /api/blocks/{height}` - Block details
-
-### Transactions
-- `GET /api/transactions` - List transactions
-- `GET /api/transactions/{hash}` - Transaction details
-
-### Accounts
-- `GET /api/accounts` - List accounts
-- `GET /api/accounts/{address}` - Account details
-
-### Stats
-- `GET /api/stats` - Overview statistics
-- `GET /api/stats/tps` - TPS metrics
+Still pending: production-grade per-client API quotas/auth, large-history performance,
+independent light-client proofs and real wallet/compute-market functionality.

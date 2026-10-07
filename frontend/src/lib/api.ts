@@ -26,6 +26,10 @@ export interface Stats {
   sync: {
     indexed_height: number;
     last_updated: string | null;
+    state_height: number;
+    node_height: number;
+    online: boolean;
+    error: string | null;
   };
 }
 
@@ -55,7 +59,8 @@ export interface Block {
   prev_hash?: string;
   chain_id?: string;
   tx_root?: string;
-  state_root?: string;
+  app_hash_before?: string;
+  app_hash_after?: string | null;
   transactions?: Transaction[];
 }
 
@@ -88,9 +93,12 @@ export interface Transaction {
   to_address: string | null;
   amount: string;
   fee: string;
-  nonce: number;
+  nonce: string;
+  code: number;
+  status: 'success' | 'failed';
+  log?: string;
   tx_index: number;
-  gas_price?: number;
+  gas_price?: string;
   gas_limit?: number;
   gas_used?: number;
   signature?: string;
@@ -127,7 +135,11 @@ export function fetchTransaction(hash: string): Promise<Transaction> {
 export interface Account {
   address: string;
   balance: string;
-  nonce: number;
+  nonce: string;
+  self_stake: string;
+  delegated: string;
+  unbonding: string;
+  state_height: number;
   tx_count: number;
   is_validator: boolean;
   tx_sent_count?: number;
@@ -166,5 +178,26 @@ export function fetchAccountTransactions(
 }
 
 export function fetchTopAccounts(limit: number = 10): Promise<{ accounts: Account[] }> {
-  return fetchAPI<{ accounts: Account[] }>(`/accounts/top?limit=${limit}`);
+  return fetchAccounts(1, limit);
+}
+
+export interface Validator {
+  pub_key: string;
+  owner: string;
+  self_stake: string;
+  delegated: string;
+  native_power: string;
+  scheduled_power: string;
+  commission_bps: number;
+  commission_change: { bps: number; height: number } | null;
+  tombstoned: boolean;
+  penalties: string;
+}
+
+export function fetchValidators(): Promise<{state_height: number; validators: Validator[]}> {
+  return fetchAPI('/validators');
+}
+
+export function searchIndex(query: string): Promise<{path: string}> {
+  return fetchAPI(`/search?q=${encodeURIComponent(query)}`);
 }
