@@ -1,6 +1,6 @@
 # ComputeChain Explorer — Comet v3
 
-Read-only observer for the current local CometBFT/ABCI ledger. The existing
+Read-only observer for the current CometBFT/ABCI ledger. The existing
 Next.js UI now uses a separate canonical Comet adapter and durable SQLite index.
 It is not a wallet, block producer or independent light client.
 
@@ -20,6 +20,31 @@ Normal stand up includes explorer; --no-web skips explorer/website startup.
 Override the UI port with --explorer-port and LAN address with --monitoring-host.
 Stop/restart keeps the SQLite index in <devnet>/explorer/index/. No keys or node
 databases are mounted. Runtime settings/config live outside Git.
+
+## Current source: multisite WAN devnet
+
+The deployed explorer now observes `cpc-multisite-devnet-1` via full-a1 native
+loopback RPC27641. One synchronized full node provides this chain's state; the
+explorer does not need to aggregate all replicas. It remains a trusted observer,
+not an independent light client. Source node ID and the approved genesis are pinned.
+
+The old local-chain index stays at `<devnet>/explorer/index/`. The new index is
+separate: `<devnet>/explorer/indexes/CHAIN/GENESIS_SHA256/`. Never reuse or reset one
+chain's SQLite for another. Latest account state and indexed-history heights may
+briefly differ during catch-up. The source selection persists across ordinary
+`explorer-up`; the old stand's network.json cannot silently switch it back.
+
+Explicit operator switch from the workspace (full history from block1 required):
+
+~~~bash
+.tools/blockchain-venv/bin/python computechain/scripts/web_services.py explorer up \
+  --observer-home /root/computechain-node/cpc-multisite-devnet-1/nodes/full-a1
+~~~
+
+Only public genesis/source config and the chain-specific public index are mounted;
+the supplied node home, wallets and signer keys are NEVER container mounts. A wrong
+ID/genesis, RPC redirect or conflicting finalized history fails closed. Website
+stats use this same explorer, so both sites now display the WAN devnet.
 
 В LAN: http://192.168.0.100:4000/. Логин не нужен. Команды выше управляют только
 explorer, не перезапускают цепь. Индекс сохраняется после остановки.
@@ -50,7 +75,7 @@ Containers are non-root, read-only except the public index/tmpfs, resource-bound
 with digest-pinned base images. No Postgres is needed for this MVP.
 
 [Public explorer](https://explorer.computechain.space/) uses the existing edge
-Nginx and HTTPS. It displays the same experimental local devnet, not a public
+Nginx and HTTPS. It displays the experimental multisite devnet, not a public
 production chain. Public POST/broadcast and arbitrary native RPC are rejected.
 Only the configured edge peer may forward the HTTPS scheme; untrusted LAN
 clients cannot override it with X-Forwarded-Proto. The current TCP SNI edge loses

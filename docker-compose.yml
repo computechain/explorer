@@ -8,9 +8,13 @@ services:
       CPC_CHAIN_ID: ${CPC_CHAIN_ID:?Run web_services.py}
       CPC_RPC_URL: ${CPC_RPC_URL:?Run web_services.py}
       CPC_INDEX_PATH: /data/index.sqlite
+      CPC_EXPECTED_NODE_ID: ${CPC_EXPECTED_NODE_ID:-}
+      CPC_GENESIS_SHA256: ${CPC_GENESIS_SHA256:-}
+      CPC_GENESIS_FILE: ${CPC_GENESIS_FILE:-}
     command: ["python", "-m", "uvicorn", "comet:application", "--factory", "--host", "127.0.0.1", "--port", "${EXPLORER_API_PORT}", "--workers", "1", "--limit-concurrency", "32", "--timeout-keep-alive", "5"]
     volumes:
       - ${WEB_INDEX:?Run web_services.py}:/data
+      - ${WEB_GENESIS:?Run web_services.py}:/config/genesis.json:ro
     read_only: true
     tmpfs: ["/tmp:rw,noexec,nosuid,size=16m,mode=1777"]
     cap_drop: [ALL]

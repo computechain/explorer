@@ -38,14 +38,32 @@ def rpc_url(value):
 
 
 class Client:
-    def __init__(self, url, chain):
+    def __init__(self, url, chain, expected_node_id=None, genesis_file=None, genesis_sha256=None):
         self.url, self.chain = rpc_url(url), chain
+        self.expected_node_id=expected_node_id or None
+        self.pinned_genesis=None
+        fields=(expected_node_id,genesis_file,genesis_sha256)
+        if any(fields) and not all(fields):
+            raise ValueError('node ID, public genesis file and SHA pins must be configured together')
+        if all(fields):
+            if not re.fullmatch(r'[0-9a-f]{40}',expected_node_id) or not re.fullmatch(r'[0-9a-f]{64}',genesis_sha256):
+                raise ValueError('invalid observer trust identity')
+            path=Path(genesis_file)
+            if path.is_symlink(): raise ValueError('public genesis pin must not be a symlink')
+            with path.open('rb') as stream: raw=stream.read(65537)
+            if len(raw)>65536 or hashlib.sha256(raw).hexdigest()!=genesis_sha256:
+                raise ValueError('public genesis file SHA mismatch')
+            value=json.loads(raw)
+            if value['chain_id']!=chain or value['app_state'].get('schema')!=3:
+                raise ValueError('public genesis pin domain mismatch')
+            self.pinned_genesis=genesis_identity(value)
+        self.opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect())
 
     def call(self, method, **params):
         if method not in METHODS:
             raise ValueError("read-only RPC allowlist")
         suffix = "?"+urllib.parse.urlencode(params) if params else ""
-        with urllib.request.urlopen(self.url+"/"+method+suffix, timeout=5) as response:
+        with self.opener.open(self.url+"/"+method+suffix, timeout=5) as response:
             raw = response.read(MAX_REPLY+1)
         if len(raw) > MAX_REPLY:
             raise ValueError("RPC response size limit")
@@ -62,6 +80,27 @@ class Client:
         if state["chain_id"] != self.chain or state["schema"] != 3:
             raise ValueError("wrong chain or unsupported application schema")
         return state
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self,*args,**kwargs):
+        raise ValueError('observer RPC redirects are forbidden')
+
+
+def genesis_identity(value):
+    """Only normalize RFC3339Nano trailing zeroes; keep all other fields exact."""
+    result=dict(value)
+    if 'genesis_time' in result:
+        stamp=result['genesis_time']
+        if not isinstance(stamp,str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,9})?Z',stamp):
+            raise ValueError('invalid genesis timestamp')
+        datetime.strptime(stamp.split('.')[0].rstrip('Z'),'%Y-%m-%dT%H:%M:%S')
+        if '.' in stamp:
+            whole,fraction=stamp[:-1].split('.')
+            fraction=fraction.rstrip('0')
+            stamp=whole+('.'+fraction if fraction else '')+'Z'
+        result['genesis_time']=stamp
+    return json.dumps(result,sort_keys=True,separators=(',',':'))
 
 
 def timestamp(value):
@@ -207,11 +246,16 @@ def synchronize(index, client, stop):
     while not stop.is_set():
         try:
             if not initialized:
-                index.genesis(client.call("genesis")["genesis"])
+                genesis=client.call("genesis")["genesis"]
+                if client.pinned_genesis is not None and genesis_identity(genesis)!=client.pinned_genesis:
+                    raise ValueError('RPC genesis differs from approved source pin')
+                index.genesis(genesis)
                 initialized = True
             status = client.call("status")
             if status["node_info"]["network"] != index.chain:
                 raise ValueError("wrong RPC chain")
+            if client.expected_node_id and status['node_info']['id']!=client.expected_node_id:
+                raise ValueError('wrong RPC node identity')
             target = int(status["sync_info"]["latest_block_height"])
             state = client.state()
             at_height = max(1, state["height"])
@@ -430,4 +474,6 @@ def create_app(index, client=None):
 
 def application():
     chain = os.environ["CPC_CHAIN_ID"]
-    return create_app(Index(os.environ["CPC_INDEX_PATH"],chain), Client(os.environ["CPC_RPC_URL"],chain))
+    client=Client(os.environ['CPC_RPC_URL'],chain,os.environ.get('CPC_EXPECTED_NODE_ID'),
+                  os.environ.get('CPC_GENESIS_FILE'),os.environ.get('CPC_GENESIS_SHA256'))
+    return create_app(Index(os.environ["CPC_INDEX_PATH"],chain),client)

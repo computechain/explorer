@@ -12,10 +12,53 @@ from fastapi.testclient import TestClient
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[4]))
 from explorer.backend.comet import Index, create_app, block_record, transaction, Client, rpc_url
+from explorer.backend.comet import genesis_identity
+from explorer.backend.comet import synchronize, NoRedirect
 
 CHAIN = "observer-test"
 RAW = json.dumps({"type":"TRANSFER","from":"cpc1sender","to":"cpc1recipient","amount":str(2**100+19),
     "gas_price":"1000","gas_limit":21000,"nonce":0,"payload":{}},sort_keys=True,separators=(",",":")).encode()
+
+
+def test_observer_pins_public_genesis_and_node_together(tmp_path):
+    genesis={'chain_id':CHAIN,'app_state':{'schema':3},'genesis_time':'2026-10-08T05:03:41.982680Z'}
+    path=tmp_path/'genesis.json'; path.write_text(json.dumps(genesis))
+    sha=hashlib.sha256(path.read_bytes()).hexdigest()
+    client=Client('http://127.0.0.1:27641',CHAIN,'a'*40,path,sha)
+    assert client.expected_node_id=='a'*40
+    assert client.pinned_genesis==genesis_identity({**genesis,'genesis_time':'2026-10-08T05:03:41.98268Z'})
+    assert client.pinned_genesis!=genesis_identity({**genesis,'genesis_time':'2026-10-08T05:03:41.982680001Z'})
+    with pytest.raises(ValueError): Client('http://127.0.0.1:27641',CHAIN,'a'*40)
+    with pytest.raises(ValueError): Client('http://127.0.0.1:27641',CHAIN,'a'*40,path,'f'*64)
+    with pytest.raises(ValueError): Client('http://127.0.0.1:27641','other-chain','a'*40,path,sha)
+
+
+@pytest.mark.parametrize('fault',['node-id','genesis'])
+def test_wrong_pinned_source_cannot_publish_history_or_account_state(tmp_path,monkeypatch,fault):
+    genesis={'chain_id':CHAIN,'app_state':{'schema':3}}
+    path=tmp_path/'genesis.json'; path.write_text(json.dumps(genesis))
+    client=Client('http://127.0.0.1:27641',CHAIN,'a'*40,path,hashlib.sha256(path.read_bytes()).hexdigest())
+    def call(method,**params):
+        if method=='genesis': return {'genesis':{**genesis,'extra':'foreign'} if fault=='genesis' else genesis}
+        if method=='status': return {'node_info':{'network':CHAIN,'id':'b'*40}}
+        pytest.fail('unapproved source must fail before block/state queries')
+    monkeypatch.setattr(client,'call',call)
+    monkeypatch.setattr(client,'state',lambda:pytest.fail('unapproved state query'))
+    class OnePoll:
+        done=False
+        def is_set(self): return self.done
+        def wait(self,seconds): self.done=True
+    index=Index(tmp_path/'index/index.sqlite',CHAIN)
+    try:
+        synchronize(index,client,OnePoll())
+        assert index.height()==0 and index.state is None
+        assert 'identity' in index.error if fault=='node-id' else 'genesis' in index.error
+    finally: index.close()
+
+
+def test_rpc_redirect_cannot_escape_loopback():
+    with pytest.raises(ValueError,match='redirect'):
+        NoRedirect().redirect_request(None,None,302,'redirect',{},'http://8.8.8.8/')
 
 
 def sample(h=1, prev="", raw=(RAW,), codes=None):
